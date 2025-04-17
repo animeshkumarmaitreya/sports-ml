@@ -1,6 +1,7 @@
 import argparse
 from enum import Enum
 from typing import Iterator, List
+from roboflow import Roboflow
 
 import os
 import cv2
@@ -265,7 +266,43 @@ def run_player_tracking(source_video_path: str, device: str) -> Iterator[np.ndar
             annotated_frame, detections, labels=labels)
         yield annotated_frame
 
+def run_ball_tracking(source, output, device="cpu"):
+    rf = Roboflow(api_key="YOUR_API_KEY")  # Replace this!
+    project = rf.workspace().project("ball_3k_to_be_annotated")
+    model = project.version(1).model
 
+    cap = cv2.VideoCapture(source)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    out = cv2.VideoWriter(output, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        temp_path = "temp_frame.jpg"
+        cv2.imwrite(temp_path, frame)
+
+
+        result = model.predict(temp_path, confidence=40, overlap=30).json()
+
+        for prediction in result["predictions"]:
+            x, y, w, h = prediction["x"], prediction["y"], prediction["width"], prediction["height"]
+            class_name = prediction["class"]
+            cv2.rectangle(frame, 
+                          (int(x - w / 2), int(y - h / 2)), 
+                          (int(x + w / 2), int(y + h / 2)), 
+                          (0, 255, 255), 2)
+            cv2.putText(frame, class_name, (int(x), int(y - 10)), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+
+        out.write(frame)
+
+    cap.release()
+    out.release()
+    
 def run_team_classification(source_video_path: str, device: str) -> Iterator[np.ndarray]:
     """
     Run team classification on a video and yield annotated frames with team colors.
